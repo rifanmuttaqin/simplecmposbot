@@ -1,0 +1,15 @@
+services:
+  telegrambotpos:
+    build: .
+    container_name: telegrambotpos
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres-global
+    networks:
+      - postgres-global_global-net
+
+networks:
+  postgres-global_global-net:
+    external: true
