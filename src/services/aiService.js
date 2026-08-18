@@ -31,6 +31,10 @@ DATABASE SCHEMA (simplecmpos_db):
 - product_categories: id, store_id, name, slug
 - cashflow_transactions: id, store_id, cashflow_category_id, direction (cash_in/cash_out), number, status (issued/draft/void), transacted_at, amount, counterparty_name, notes, reference_number
 - cashflow_categories: id, store_id, code, name, direction (cash_in/cash_out), description
+- contents: id, store_id, employee_id, title, session, shoot_instructions, script, product_id, product_name, status (draft/dibuat/terbit/dibatalkan), content_date, script_format (plain/markdown), caption
+- content_labels: id, store_id, name, color, usage_count
+- content_content_labels: content_id, content_label_id (pivot tabel many-to-many)
+- content_status_histories: id, content_id, from_status, to_status, note, changed_by
 
 Kamu memiliki akses ke tools untuk mengambil data dari database. Gunakan tools tersebut ketika user meminta data dari sistem.
 

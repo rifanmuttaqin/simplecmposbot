@@ -189,6 +189,76 @@ const tools = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'query_contents',
+      description:
+        'Mencari data konten (contents) berdasarkan kata kunci, status, atau tanggal. Gunakan ketika user menanyakan data konten, jadwal konten, atau rencana produksi konten.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search_term: {
+            type: 'string',
+            description: 'Kata kunci pencarian di title, script, atau product_name (kosongkan untuk semua)',
+          },
+          status: {
+            type: 'string',
+            description: 'Filter status konten: draft, dibuat, terbit, dibatalkan. Kosongkan untuk semua.',
+          },
+          content_date: {
+            type: 'string',
+            description: 'Filter tanggal konten format YYYY-MM-DD (opsional)',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Jumlah maksimum hasil (default: 10)',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_content_detail',
+      description:
+        'Mengambil detail satu konten berdasarkan ID, termasuk label dan riwayat perubahan status.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content_id: {
+            type: 'string',
+            description: 'ID konten (uuid)',
+          },
+        },
+        required: ['content_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_content_labels',
+      description:
+        'Mengambil daftar label konten (content_labels) yang tersedia. Bisa filter berdasarkan kata kunci.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search_term: {
+            type: 'string',
+            description: 'Kata kunci nama label (kosongkan untuk semua)',
+          },
+          limit: {
+            type: 'integer',
+            description: 'Jumlah maksimum hasil (default: 20)',
+          },
+        },
+        required: [],
+      },
+    },
+  },
 ];
 
 // ─── Database Query: Latest Transactions ─────────────────────────────────────
@@ -370,6 +440,97 @@ async function queryStock(productName) {
   return JSON.stringify({ count: rows.length, stocks: rows });
 }
 
+// ─── Content Query Functions ─────────────────────────────────────────────────
+
+async function queryContents(searchTerm, status, contentDate, limit = 10) {
+  let sql = `SELECT c.id, c.title, c.session, c.status, c.content_date,
+                    c.product_name, c.script_format, c.caption,
+                    e.full_name AS employee_name,
+                    (SELECT string_agg(cl.name, ', ')
+                     FROM content_content_labels ccl
+                     JOIN content_labels cl ON ccl.content_label_id = cl.id
+                     WHERE ccl.content_id = c.id) AS labels
+             FROM contents c
+             LEFT JOIN employees e ON c.employee_id = e.id
+             WHERE c.is_active = 'active'`;
+  const params = [];
+  let idx = 1;
+
+  if (searchTerm) {
+    sql += ` AND (c.title ILIKE '%' || $${idx} || '%'
+                 OR c.script ILIKE '%' || $${idx} || '%'
+                 OR c.product_name ILIKE '%' || $${idx} || '%')`;
+    params.push(searchTerm);
+    idx++;
+  }
+  if (status) {
+    sql += ` AND c.status = $${idx}`;
+    params.push(status);
+    idx++;
+  }
+  if (contentDate) {
+    sql += ` AND c.content_date = $${idx}`;
+    params.push(contentDate);
+    idx++;
+  }
+
+  sql += ` ORDER BY c.content_date DESC, c.created_at DESC LIMIT $${idx}`;
+  params.push(limit);
+
+  const { rows } = await pool.query(sql, params);
+  return JSON.stringify({ count: rows.length, contents: rows });
+}
+
+async function queryContentDetail(contentId) {
+  const contentSql = `SELECT c.*, e.full_name AS employee_name,
+                              s.name AS store_name
+                       FROM contents c
+                       LEFT JOIN employees e ON c.employee_id = e.id
+                       LEFT JOIN stores s ON c.store_id = s.id
+                       WHERE c.id = $1`;
+  const { rows: contentRows } = await pool.query(contentSql, [contentId]);
+  if (contentRows.length === 0) {
+    return JSON.stringify({ result: 'not_found', content_id: contentId });
+  }
+
+  const content = contentRows[0];
+
+  const labelsSql = `SELECT cl.id, cl.name, cl.color
+                     FROM content_content_labels ccl
+                     JOIN content_labels cl ON ccl.content_label_id = cl.id
+                     WHERE ccl.content_id = $1
+                     ORDER BY cl.name`;
+  const { rows: labels } = await pool.query(labelsSql, [contentId]);
+
+  const historySql = `SELECT from_status, to_status, note, changed_by, created_at
+                      FROM content_status_histories
+                      WHERE content_id = $1
+                      ORDER BY created_at DESC`;
+  const { rows: history } = await pool.query(historySql, [contentId]);
+
+  return JSON.stringify({ content, labels, status_history: history });
+}
+
+async function queryContentLabels(searchTerm, limit = 20) {
+  let sql = `SELECT id, name, color, usage_count
+             FROM content_labels
+             WHERE is_active = 'active'`;
+  const params = [];
+  let idx = 1;
+
+  if (searchTerm) {
+    sql += ` AND name ILIKE '%' || $${idx} || '%'`;
+    params.push(searchTerm);
+    idx++;
+  }
+
+  sql += ` ORDER BY usage_count DESC, name ASC LIMIT $${idx}`;
+  params.push(limit);
+
+  const { rows } = await pool.query(sql, params);
+  return JSON.stringify({ count: rows.length, labels: rows });
+}
+
 // ─── Tool Execution Router ───────────────────────────────────────────────────
 
 async function executeFunction(name, args) {
@@ -394,6 +555,12 @@ async function executeFunction(name, args) {
       return queryCashflow(args.direction, args.status, args.search_term, args.limit || 10);
     case 'query_cashflow_summary':
       return queryCashflowSummary(args.start_date, args.end_date);
+    case 'query_contents':
+      return queryContents(args.search_term, args.status, args.content_date, args.limit || 10);
+    case 'query_content_detail':
+      return queryContentDetail(args.content_id);
+    case 'query_content_labels':
+      return queryContentLabels(args.search_term, args.limit || 20);
     default:
       return JSON.stringify({ error: `Unknown function: ${name}` });
   }
