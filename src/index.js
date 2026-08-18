@@ -1,3 +1,4 @@
+require('./utils/dns-fix');
 require('./config/env');
 const TelegramBot = require('node-telegram-bot-api');
 const config = require('./config/env');

@@ -1,5 +1,6 @@
 const { getReceiptDetailByResi } = require('../services/receiptService');
 const { formatReceiptMessage } = require('./formatter');
+const { isInChatMode, enterChatMode, exitChatMode, handleMessage } = require('../services/chatAgentService');
 
 const GREETING_MESSAGE = 'Selamat datang di SimpleCMPOS, Bos Rifan, ada yang bisa aku bantu hari ini ?';
 
@@ -8,6 +9,15 @@ const MAIN_MENU_KEYBOARD = {
     inline_keyboard: [
       [{ text: '🔌 Cek Koneksi BOT', callback_data: 'cek_koneksi' }],
       [{ text: '📦 Cek Retur Paket', callback_data: 'cek_retur' }],
+      [{ text: '💬 Chat Agent', callback_data: 'chat_agent' }],
+    ],
+  },
+};
+
+const EXIT_CHAT_KEYBOARD = {
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: '🔙 Kembali ke Menu', callback_data: 'exit_chat' }],
     ],
   },
 };
@@ -55,13 +65,46 @@ function registerHandlers(bot) {
     if (data === 'cek_retur') {
       await bot.sendMessage(chatId, 'Silakan kirim nomor resi retur paket Anda:');
     }
+
+    if (data === 'chat_agent') {
+      enterChatMode(chatId);
+      await bot.sendMessage(
+        chatId,
+        '💬 <b>Mode Chat Agent aktif!</b>\n\nAnda sekarang bisa bertanya tentang data sistem Albarr.\nContoh:\n• "Produk apa saja yang tersedia?"\n• "Cek stok produk X"\n• "Transaksi hari ini"\n\nKlik tombol di bawah atau kirim /stop untuk keluar.',
+        { parse_mode: 'HTML', ...EXIT_CHAT_KEYBOARD }
+      );
+    }
+
+    if (data === 'exit_chat') {
+      exitChatMode(chatId);
+      await bot.sendMessage(chatId, 'Keluar dari mode Chat Agent.');
+      sendMainMenu(bot, chatId);
+    }
   });
 
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = (msg.text || '').trim();
 
-    if (!text || text.startsWith('/')) return;
+    if (!text || text.startsWith('/')) {
+      if (text === '/stop' && isInChatMode(chatId)) {
+        exitChatMode(chatId);
+        await bot.sendMessage(chatId, 'Keluar dari mode Chat Agent.');
+        sendMainMenu(bot, chatId);
+      }
+      return;
+    }
+
+    if (isInChatMode(chatId)) {
+      try {
+        const response = await handleMessage(chatId, text);
+        await bot.sendMessage(chatId, response, { parse_mode: 'HTML', ...EXIT_CHAT_KEYBOARD });
+      } catch (err) {
+        console.error('[CHAT ERROR]', err);
+        await bot.sendMessage(chatId, 'Terjadi kendala, silakan coba lagi.', EXIT_CHAT_KEYBOARD);
+      }
+      return;
+    }
 
     try {
       console.log(`[QUERY] resi: "${text}" from chat ${chatId}`);

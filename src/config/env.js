@@ -7,6 +7,9 @@ const requiredVars = [
   'DB_DATABASE',
   'DB_USERNAME',
   'DB_PASSWORD',
+  'OPEN_AI_APIKEY',
+  'OPEN_AI_BASE_URL',
+  'OPEN_AI_MODEL',
 ];
 
 const missing = requiredVars.filter((v) => !process.env[v]);
@@ -24,5 +27,10 @@ module.exports = {
     database: process.env.DB_DATABASE,
     user: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
+  },
+  openai: {
+    apiKey: process.env.OPEN_AI_APIKEY,
+    baseURL: process.env.OPEN_AI_BASE_URL,
+    model: process.env.OPEN_AI_MODEL,
   },
 };
